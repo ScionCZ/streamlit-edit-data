@@ -2,9 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 
-st.set_page_config(page_title="Pen Set Editor", layout="wide")
-
-# Funkce pro parsování pen setu
+# Funkce na parsování .txt souboru se strukturou pen setu
 def parse_penset(txt):
     lines = txt.strip().split('\n')
     data_lines = []
@@ -14,32 +12,32 @@ def parse_penset(txt):
             start = True
             continue
         if start:
-            if line.strip() == '':
-                break
+            if line.strip() == '' or line.startswith("*****"):
+                continue
             data_lines.append(line)
 
     rows = []
     for line in data_lines:
         parts = line.split('\t')
         if len(parts) >= 7:
-            rows.append({
-                'Index': parts[0],
-                'Červená': int(parts[1]),
-                'Zelená': int(parts[2]),
-                'Modrá': int(parts[3]),
-                'Tloušťka (v mm)': float(parts[4]),
-                'Používá se': parts[5],
-                'Popis': parts[6]
-            })
+            try:
+                rows.append({
+                    'Index': int(parts[0]),
+                    'Červená': int(parts[1]),
+                    'Zelená': int(parts[2]),
+                    'Modrá': int(parts[3]),
+                    'Tloušťka (v mm)': float(parts[4]),
+                    'Používá se': parts[5],
+                    'Popis': parts[6]
+                })
+            except ValueError:
+                continue  # přeskočí řádky s nevalidními daty
+
     df = pd.DataFrame(rows)
+    df['Barva'] = df.apply(lambda row: f"background-color: rgb({row['Červená']}, {row['Zelená']}, {row['Modrá']})", axis=1)
     return df
 
-# Funkce pro vytvoření barevného sloupce
-def add_color_preview(df):
-    df['Barva'] = df.apply(lambda row: f"""
-        <div style='width: 30px; height: 20px; background-color: rgb({row['Červená']}, {row['Zelená']}, {row['Modrá']}); border: 1px solid #000;'></div>""", axis=1)
-    return df
-
+st.set_page_config(page_title="Pen set editor", layout="wide")
 st.title("Pen set editor")
 
 uploaded_file = st.file_uploader("Nahraj .txt soubor s pen setem", type=["txt"])
@@ -47,28 +45,55 @@ uploaded_file = st.file_uploader("Nahraj .txt soubor s pen setem", type=["txt"])
 if uploaded_file is not None:
     content = uploaded_file.read().decode("utf-8")
     df = parse_penset(content)
-    df = add_color_preview(df)
 
-    # Zobrazit tabulku s HTML náhledy barev
-    st.markdown("### Náhled dat")
-    st.write("Edituj tabulku kromě sloupců Index a Používá se:")
+    # Rozdělení na editovatelné a needitovatelné sloupce
+    editable_cols = ['Červená', 'Zelená', 'Modrá', 'Tloušťka (v mm)', 'Popis']
+    readonly_cols = ['Index', 'Používá se']
 
-    # Připravit editovatelný DataFrame (bez Index a Používá se)
-    editable_df = df.drop(columns=["Index", "Používá se", "Barva"])
-    edited_df = st.data_editor(editable_df, use_container_width=True, num_rows="dynamic", hide_index=True)
+    st.write("### Upravitelná tabulka")
+    styled_df = df[[*readonly_cols, *editable_cols]].copy()
 
-    # Aktualizovat původní df editovanými daty
-    df.update(edited_df)
-    df = add_color_preview(df)  # Reaplikace barev po změně RGB
+    # Přidání náhledu barvy vpravo od Modrá
+    styled_df.insert(4, 'Náhled barvy', [''] * len(df))
+    for i in styled_df.index:
+        r, g, b = styled_df.loc[i, 'Červená'], styled_df.loc[i, 'Zelená'], styled_df.loc[i, 'Modrá']
+        styled_df.at[i, 'Náhled barvy'] = f"\
+            <div style='width: 40px; height: 20px; background-color: rgb({r},{g},{b}); border: 1px solid #000;'></div>"
 
-    # Sloučit zpět pro zobrazení
-    display_df = df[["Index", "Červená", "Zelená", "Modrá", "Barva", "Tloušťka (v mm)", "Používá se", "Popis"]]
+    # Použití Streamlit AgGrid pro editaci a zobrazení HTML stylu
+    from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
+    gb = GridOptionsBuilder.from_dataframe(styled_df)
+    gb.configure_columns(editable_cols, editable=True)
+    gb.configure_column("Náhled barvy", cellRenderer=JsCode('''
+        function(params) {
+            return params.value;
+        }
+    '''), editable=False, wrapText=True, autoHeight=True)
 
-    # Zobrazit jako HTML tabulku s barvami
-    st.markdown("### Upravená data s barevným náhledem")
-    st.write(display_df.to_html(escape=False, index=False), unsafe_allow_html=True)
+    gridOptions = gb.build()
+    response = AgGrid(
+        styled_df,
+        gridOptions=gridOptions,
+        allow_unsafe_jscode=True,
+        fit_columns_on_grid_load=True,
+        enable_enterprise_modules=False,
+        height=500,
+        reload_data=True
+    )
 
-    # Export tlačítko
-    if st.button("Exportovat jako CSV", type="primary"):
-        csv = df.drop(columns=["Barva"]).to_csv(index=False).encode("utf-8")
-        st.download_button("Stáhnout CSV", csv, "upraveny_pen_set.csv", "text/csv", key="download-csv")
+    updated_df = response['data']
+
+    # Přidat tlačítko pro export
+    st.write("### Exportovat")
+    if st.button("Exportovat jako .txt", type="primary"):
+        export_df = updated_df[["Index", "Červená", "Zelená", "Modrá", "Tloušťka (v mm)", "Používá se", "Popis"]]
+        export_txt = 'Index\tČervená\tZelená\tModrá\tTloušťka (v mm)\tPoužívá se\tPopis\n'
+        for _, row in export_df.iterrows():
+            export_txt += f"{row['Index']}\t{row['Červená']}\t{row['Zelená']}\t{row['Modrá']}\t{row['Tloušťka (v mm)']:.6f}\t{row['Používá se']}\t{row['Popis']}\n"
+
+        st.download_button(
+            label="Stáhnout .txt soubor",
+            data=export_txt,
+            file_name="upraveny_penset.txt",
+            mime="text/plain"
+        )
