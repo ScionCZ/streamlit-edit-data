@@ -1,28 +1,43 @@
 import streamlit as st
 import pandas as pd
+import io
 
-# Data z tvého příkladu
-data = {
-    "Index": [1, 2, 3, 4, 5],
-    "Červená": [0, 127, 255, 2, 64],
-    "Zelená": [0, 127, 102, 158, 165],
-    "Modrá": [0, 127, 0, 33, 255],
-    "Tloušťka (v mm)": [0.13, 0.15, 0.18, 0.20, 0.25],
-    "Používá se": ["Používá se", "Používá se", "Používá se", "Používá se", "Používá se"],
-    "Popis": [
-        "Obecné - výplně",
-        "2D prvky - obecné",
-        "Výplně otvorů - obecné",
-        "Objekty - obecné",
-        "Anotace - obecné",
-    ],
-}
+def parse_penset(txt):
+    # Jednoduché parsování podle tebou dodaného formátu
+    lines = txt.strip().split('\n')
+    data_lines = []
+    start = False
+    for line in lines:
+        if line.startswith("Index"):
+            start = True
+            continue
+        if start:
+            if line.strip() == '':
+                break
+            data_lines.append(line)
 
-df = pd.DataFrame(data)
+    # Převod na DataFrame
+    rows = []
+    for line in data_lines:
+        parts = line.split('\t')
+        if len(parts) >= 7:
+            rows.append({
+                'Index': parts[0],
+                'Červená': parts[1],
+                'Zelená': parts[2],
+                'Modrá': parts[3],
+                'Tloušťka (v mm)': parts[4],
+                'Používá se': parts[5],
+                'Popis': parts[6]
+            })
+    return pd.DataFrame(rows)
 
-st.title("Editor dat PERA (2-TLČ)")
+st.title("Pen set editor")
 
-edited_df = st.data_editor(df, num_rows="dynamic")
+uploaded_file = st.file_uploader("Nahraj .txt soubor s pen setem", type=["txt"])
 
-st.write("Upravená data:")
-st.dataframe(edited_df)
+if uploaded_file is not None:
+    content = uploaded_file.read().decode("utf-8")
+    df = parse_penset(content)
+    st.write("Načtená data:")
+    st.dataframe(df)
