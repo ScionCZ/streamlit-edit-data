@@ -1,9 +1,7 @@
 import streamlit as st
 import pandas as pd
-import io
 
 def parse_penset(txt):
-    # Jednoduché parsování podle tebou dodaného formátu
     lines = txt.strip().split('\n')
     data_lines = []
     start = False
@@ -16,7 +14,6 @@ def parse_penset(txt):
                 break
             data_lines.append(line)
 
-    # Převod na DataFrame
     rows = []
     for line in data_lines:
         parts = line.split('\t')
@@ -32,6 +29,22 @@ def parse_penset(txt):
             })
     return pd.DataFrame(rows)
 
+# Přidání CSS pro barevná tlačítka
+st.markdown("""
+<style>
+div.stDownloadButton > button:first-child {
+    background-color: #4CAF50;  /* zelená */
+    color: white;
+    font-weight: bold;
+}
+div.stButton > button:first-child {
+    background-color: #2196F3;  /* modrá */
+    color: white;
+    font-weight: bold;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.title("Pen set editor")
 
 uploaded_file = st.file_uploader("Nahraj .txt soubor s pen setem", type=["txt"])
@@ -41,9 +54,8 @@ if uploaded_file is not None:
     df = parse_penset(content)
     
     st.write("Načtená data:")
-    edited_df = st.data_editor(df, num_rows="dynamic")  # Přepnuto na editable tabulku
-    
-    # Tlačítko pro export
+    edited_df = st.data_editor(df, num_rows="dynamic")
+
     csv = edited_df.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="Stáhni upravená data jako CSV",
