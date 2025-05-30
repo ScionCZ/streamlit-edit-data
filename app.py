@@ -2,9 +2,6 @@ import streamlit as st
 import pandas as pd
 import io
 
-st.set_page_config(page_title="Pen Set Editor", layout="wide")
-
-# Funkce na parsování .txt souboru s pen setem
 def parse_penset(txt):
     lines = txt.strip().split('\n')
     data_lines = []
@@ -14,12 +11,12 @@ def parse_penset(txt):
             start = True
             continue
         if start:
-            if line.strip() == '' or line.startswith("*****"):
+            if not line.strip() or line.startswith("*****"):
                 continue
-            parts = line.split('\t')
+            parts = line.strip().split('\t')
             if len(parts) >= 7:
                 try:
-                    data_lines.append({
+                    rows.append({
                         'Index': int(parts[0]),
                         'Červená': int(parts[1]),
                         'Zelená': int(parts[2]),
@@ -29,42 +26,46 @@ def parse_penset(txt):
                         'Popis': parts[6]
                     })
                 except ValueError:
-                    continue  # Přeskočí řádek pokud čísla nejsou validní
+                    continue
+    return pd.DataFrame(rows)
 
-    return pd.DataFrame(data_lines)
+def generate_txt(df):
+    header = "---- PERA (2-TL\u010c) ----\nIndex\t\u010cerven\u00e1\tZelen\u00e1\tModr\u00e1\tTlou\u0161\u0165ka (v mm)\tPou\u017e\u00edv\u00e1 se\tPopis\n*****\t*****\t*****\t*****\t*****\t*****\t*****"
+    lines = [
+        f"{row['Index']}\t{row['\u010cerven\u00e1']}\t{row['Zelen\u00e1']}\t{row['Modr\u00e1']}\t{row['Tlou\u0161\u0165ka (v mm)']:.6f}\t{row['Pou\u017e\u00edv\u00e1 se']}\t{row['Popis']}"
+        for _, row in df.iterrows()
+    ]
+    return header + "\n" + "\n".join(lines)
 
-# Funkce na konverzi dataframe zpět do formátu .txt
-def export_to_txt(df):
-    output = io.StringIO()
-    output.write("---- PERA (2-TLČ) ----\n")
-    output.write("Index\tČervená\tZelená\tModrá\tTloušťka (v mm)\tPoužívá se\tPopis\n")
-    output.write("*****\t*****\t*****\t*****\t*****\t*****\t*****\n")
-    for _, row in df.iterrows():
-        line = f"{row['Index']}\t{row['Červená']}\t{row['Zelená']}\t{row['Modrá']}\t{row['Tloušťka (v mm)']:.6f}\t{row['Používá se']}\t{row['Popis']}\n"
-        output.write(line)
-    return output.getvalue()
-
-# Hlavní aplikace
-st.title("🖊️ Pen Set Editor")
+st.title("Pen set editor")
 
 uploaded_file = st.file_uploader("Nahraj .txt soubor s pen setem", type=["txt"])
 
 if uploaded_file is not None:
     content = uploaded_file.read().decode("utf-8")
+    rows = []
     df = parse_penset(content)
 
-    st.success("Soubor úspěšně načten!")
-    st.markdown("### Edituj data")
+    st.subheader("Edituj tabulku")
     edited_df = st.data_editor(df, num_rows="dynamic")
 
-    # Color picker (volitelný)
-    st.markdown("### 🎨 Color Picker pro testování")
-    selected_color = st.color_picker("Vyber barvu", value="#000000")
+    st.subheader("Color Picker náhled")
+    for i in range(len(edited_df)):
+        r, g, b = edited_df.loc[i, 'Červená'], edited_df.loc[i, 'Zelená'], edited_df.loc[i, 'Modrá']
+        color_hex = '#%02x%02x%02x' % (r, g, b)
+        picked_color = st.color_picker(f"Barva pro Index {edited_df.loc[i, 'Index']}", color_hex, key=f"picker_{i}")
+        # Update RGB zpět do DataFrame
+        picked_color_rgb = tuple(int(picked_color.lstrip('#')[j:j+2], 16) for j in (0, 2, 4))
+        edited_df.at[i, 'Červená'] = picked_color_rgb[0]
+        edited_df.at[i, 'Zelená'] = picked_color_rgb[1]
+        edited_df.at[i, 'Modrá'] = picked_color_rgb[2]
 
-    # Export tlačítko
-    st.markdown("### 📤 Export")
-    export_txt = export_to_txt(edited_df)
-    st.download_button("💾 Exportuj jako .txt", data=export_txt, file_name="exported_pen_set.txt", mime="text/plain", use_container_width=True)
-
-    # Debug info
-    st.markdown(f"Aktuální vybraná barva: `{selected_color}`")
+    st.subheader("Export dat")
+    if st.button("💾 Exportovat jako TXT", type="primary"):
+        result_txt = generate_txt(edited_df)
+        st.download_button(
+            label="📥 Stáhnout .txt",
+            data=result_txt,
+            file_name="exported_penset.txt",
+            mime="text/plain"
+        )
