@@ -2,9 +2,11 @@ import streamlit as st
 import pandas as pd
 import io
 
-st.set_page_config(page_title="Pen set editor", layout="wide")
+st.set_page_config(page_title="Pen Set Editor", layout="wide")
 
-# Funkce na parsování pen set souboru
+st.title("Pen set editor")
+
+# Funkce pro parsování .txt souboru
 def parse_penset(txt):
     lines = txt.strip().split('\n')
     data_lines = []
@@ -14,7 +16,7 @@ def parse_penset(txt):
             start = True
             continue
         if start:
-            if line.strip() == '' or line.startswith('*****'):
+            if line.strip() == '' or line.startswith("*****"):
                 continue
             data_lines.append(line)
 
@@ -22,26 +24,20 @@ def parse_penset(txt):
     for line in data_lines:
         parts = line.split('\t')
         if len(parts) >= 7:
-            try:
-                rows.append({
-                    'Index': int(parts[0]),
-                    'Červená': int(parts[1]),
-                    'Zelená': int(parts[2]),
-                    'Modrá': int(parts[3]),
-                    'Tloušťka (v mm)': float(parts[4]),
-                    'Používá se': parts[5],
-                    'Popis': parts[6]
-                })
-            except ValueError:
-                continue
+            rows.append({
+                'Index': parts[0],
+                'Červená': int(parts[1]),
+                'Zelená': int(parts[2]),
+                'Modrá': int(parts[3]),
+                'Tloušťka (v mm)': float(parts[4]),
+                'Používá se': parts[5],
+                'Popis': parts[6]
+            })
     return pd.DataFrame(rows)
 
-# Funkce na vytvoření barevného hex kódu
+# Funkce pro generování barevného náhledu
 def rgb_to_hex(r, g, b):
-    return '#{:02X}{:02X}{:02X}'.format(r, g, b)
-
-# Titulek a upload
-st.title("Pen set editor")
+    return f'#{r:02x}{g:02x}{b:02x}'
 
 uploaded_file = st.file_uploader("Nahraj .txt soubor s pen setem", type=["txt"])
 
@@ -49,30 +45,41 @@ if uploaded_file is not None:
     content = uploaded_file.read().decode("utf-8")
     df = parse_penset(content)
 
-    # Přidání náhledového sloupce
-    df["Náhled"] = df.apply(lambda row: f'<div style="width: 100%%; height: 20px; background-color: {rgb_to_hex(row["Červená"], row["Zelená"], row["Modrá"])}"></div>', axis=1)
+    st.subheader("Uprav data")
 
-    # Umožnění editace vybraných sloupců (kromě Index a Používá se)
-    editable_cols = ['Červená', 'Zelená', 'Modrá', 'Tloušťka (v mm)', 'Popis']
-    edited_df = st.data_editor(
-        df,
-        column_config={
-            "Náhled": st.column_config.Column("Náhled", help="Barevný náhled", disabled=True, html=True),
-            "Index": st.column_config.Column("Index", disabled=True),
-            "Používá se": st.column_config.Column("Používá se", disabled=True)
-        },
-        disabled=[col for col in df.columns if col not in editable_cols],
-        use_container_width=True,
-        height=600,
-        num_rows="dynamic"
-    )
+    edited_rows = []
+    for i, row in df.iterrows():
+        st.markdown(f"#### Položka {row['Index']}")
+        cols = st.columns([1, 1, 1, 1, 2, 3, 1])
 
-    # Export tlačítko
-    if st.button("Exportovat upravený pen set", type="primary"):
+        r = cols[0].number_input("Červená", min_value=0, max_value=255, value=int(row['Červená']), key=f"r_{i}")
+        g = cols[1].number_input("Zelená", min_value=0, max_value=255, value=int(row['Zelená']), key=f"g_{i}")
+        b = cols[2].number_input("Modrá", min_value=0, max_value=255, value=int(row['Modrá']), key=f"b_{i}")
+
+        thickness = cols[3].number_input("Tloušťka (v mm)", value=float(row['Tloušťka (v mm)']), key=f"t_{i}")
+        desc = cols[4].text_input("Popis", value=row['Popis'], key=f"d_{i}")
+
+        hex_color = rgb_to_hex(r, g, b)
+        cols[5].markdown(f'<div style="width:100%; height:38px; background-color:{hex_color}; border-radius:5px; border:1px solid #ccc"></div>', unsafe_allow_html=True)
+
+        edited_rows.append({
+            'Index': row['Index'],
+            'Červená': r,
+            'Zelená': g,
+            'Modrá': b,
+            'Tloušťka (v mm)': thickness,
+            'Používá se': row['Používá se'],
+            'Popis': desc
+        })
+
+    edited_df = pd.DataFrame(edited_rows)
+
+    st.subheader("Exportovat změny")
+    if st.button("📥 Exportovat jako .txt", type="primary"):
         output = io.StringIO()
         output.write("---- PERA (2-TLČ) ----\n")
         output.write("Index\tČervená\tZelená\tModrá\tTloušťka (v mm)\tPoužívá se\tPopis\n")
         output.write("*****\t*****\t*****\t*****\t*****\t*****\t*****\n")
         for _, row in edited_df.iterrows():
-            output.write(f"{row['Index']}\t{int(row['Červená'])}\t{int(row['Zelená'])}\t{int(row['Modrá'])}\t{row['Tloušťka (v mm)']:.6f}\t{row['Používá se']}\t{row['Popis']}\n")
-        st.download_button("Stáhnout .txt soubor", output.getvalue(), file_name="upraveny_pen_set.txt")
+            output.write(f"{row['Index']}\t{row['Červená']}\t{row['Zelená']}\t{row['Modrá']}\t{row['Tloušťka (v mm)']:.6f}\t{row['Používá se']}\t{row['Popis']}\n")
+        st.download_button("Stáhnout soubor", data=output.getvalue(), file_name="upraveny_penset.txt", mime="text/plain")
