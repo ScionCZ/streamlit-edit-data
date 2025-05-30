@@ -39,5 +39,15 @@ uploaded_file = st.file_uploader("Nahraj .txt soubor s pen setem", type=["txt"])
 if uploaded_file is not None:
     content = uploaded_file.read().decode("utf-8")
     df = parse_penset(content)
+    
     st.write("Načtená data:")
-    st.dataframe(df)
+    edited_df = st.data_editor(df, num_rows="dynamic")  # Přepnuto na editable tabulku
+    
+    # Tlačítko pro export
+    csv = edited_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Stáhni upravená data jako CSV",
+        data=csv,
+        file_name='upraveny_pen_set.csv',
+        mime='text/csv',
+    )
